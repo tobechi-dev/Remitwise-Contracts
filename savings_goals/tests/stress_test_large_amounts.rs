@@ -170,9 +170,13 @@ fn test_withdraw_from_goal_with_large_amount() {
 
     // Withdraw half
     env.mock_all_auths();
-    let remaining = client.withdraw_from_goal(&owner, &goal_id, &(large_amount / 2));
+    let to_withdraw = large_amount / 2;
+    let remaining = client.withdraw_from_goal(&owner, &goal_id, &to_withdraw);
 
-    assert_eq!(remaining, large_amount / 2);
+    // For odd large_amount values, large_amount - (large_amount / 2) equals
+    // ceil(large_amount / 2), not exactly large_amount / 2. Assert on the
+    // invariant instead of assuming evenness.
+    assert_eq!(remaining + to_withdraw, large_amount);
 }
 #[test]
 fn test_goal_completion_with_large_amounts() {
