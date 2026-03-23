@@ -3,7 +3,6 @@
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Map, String,
     Symbol, Vec,
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec,
 };
 
 use remitwise_common::CoverageType;
@@ -81,16 +80,11 @@ pub mod pause_functions {
 /// Insurance policy data structure with owner tracking for access control
 #[derive(Clone)]
 #[contracttype]
-#[derive(Clone)]
-#[contracttype]
-#[derive(Clone)]
-#[contracttype]
 pub struct InsurancePolicy {
     pub id: u32,
     pub owner: Address,
     pub name: String,
     pub external_ref: Option<String>,
-    pub coverage_type: String,
     pub coverage_type: CoverageType,
     pub monthly_premium: i128,
     pub coverage_amount: i128,
@@ -129,17 +123,7 @@ pub struct PremiumSchedule {
     pub missed_count: u32,
 }
 
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[repr(u32)]
-pub enum InsuranceError {
-    InvalidPremium = 1,
-    InvalidCoverage = 2,
-    PolicyNotFound = 3,
-    PolicyInactive = 4,
-    Unauthorized = 5,
-    BatchTooLarge = 6,
-}
+
 
 
 

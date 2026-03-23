@@ -76,7 +76,7 @@ fn stress_200_policies_single_user() {
     let coverage_type = String::from_str(&env, "health");
 
     for _ in 0..200 {
-        client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128);
+        client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128, &None);
     }
 
     // Verify aggregate monthly premium
@@ -126,7 +126,7 @@ fn stress_instance_ttl_valid_after_200_policies() {
     let coverage_type = String::from_str(&env, "life");
 
     for _ in 0..200 {
-        client.create_policy(&owner, &name, &coverage_type, &50i128, &5_000i128);
+        client.create_policy(&owner, &name, &coverage_type, &50i128, &5_000i128, &None);
     }
 
     let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
@@ -164,8 +164,7 @@ fn stress_policies_across_10_users() {
                 &name,
                 &coverage_type,
                 &PREMIUM_PER_POLICY,
-                &50_000i128,
-            );
+                &50_000i128, &None);
         }
     }
 
@@ -218,7 +217,7 @@ fn stress_ttl_re_bumped_after_ledger_advancement() {
 
     // Phase 1: 50 creates
     for _ in 0..50 {
-        client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128);
+        client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128, &None);
     }
 
     let ttl_batch1 = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
@@ -249,7 +248,7 @@ fn stress_ttl_re_bumped_after_ledger_advancement() {
     );
 
     // Phase 3: create_policy fires extend_ttl → re-bumped
-    client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128);
+    client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128, &None);
 
     let ttl_rebumped = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
@@ -270,10 +269,9 @@ fn stress_ttl_re_bumped_by_pay_premium_after_ledger_advancement() {
     let policy_id = client.create_policy(
         &owner,
         &String::from_str(&env, "PayTTL"),
-        &String::from_str(&env, "health"),
+        &CoverageType::Health,
         &200i128,
-        &20_000i128,
-    );
+        &20_000i128, &None);
 
     // Advance ledger so TTL drops below threshold
     env.ledger().set(LedgerInfo {
@@ -318,7 +316,7 @@ fn stress_batch_pay_premiums_at_max_batch_size() {
 
     let mut policy_ids = std::vec![];
     for _ in 0..BATCH_SIZE {
-        let id = client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128);
+        let id = client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128, &None);
         policy_ids.push(id);
     }
 
@@ -368,7 +366,7 @@ fn stress_deactivate_half_of_200_policies() {
     let coverage_type = String::from_str(&env, "life");
 
     for _ in 0..200 {
-        client.create_policy(&owner, &name, &coverage_type, &80i128, &8_000i128);
+        client.create_policy(&owner, &name, &coverage_type, &80i128, &8_000i128, &None);
     }
 
     // Deactivate even-numbered policies (IDs 2, 4, 6, …, 200)
@@ -418,7 +416,7 @@ fn bench_get_active_policies_first_page_of_200() {
     let coverage_type = String::from_str(&env, "health");
 
     for _ in 0..200 {
-        client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128);
+        client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128, &None);
     }
 
     let (cpu, mem, page) = measure(&env, || client.get_active_policies(&owner, &0u32, &50u32));
@@ -442,7 +440,7 @@ fn bench_get_total_monthly_premium_200_policies() {
     let coverage_type = String::from_str(&env, "health");
 
     for _ in 0..200 {
-        client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128);
+        client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128, &None);
     }
 
     let expected = 200i128 * 100;
@@ -468,7 +466,7 @@ fn bench_batch_pay_premiums_50_policies() {
 
     let mut policy_ids = std::vec![];
     for _ in 0..50 {
-        let id = client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128);
+        let id = client.create_policy(&owner, &name, &coverage_type, &100i128, &10_000i128, &None);
         policy_ids.push(id);
     }
 
