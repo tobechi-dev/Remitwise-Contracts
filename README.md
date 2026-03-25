@@ -478,10 +478,27 @@ See [scripts/README_INVARIANT_TESTS.md](scripts/README_INVARIANT_TESTS.md) for d
 - The suite covers minting the payer account, splitting across spending/savings/bills/insurance, and asserting balances along with the new allocation metadata helper.
 - The same command is intended for CI so it runs without manual setup; re-run locally whenever split logic changes or new USDC paths are added.
 
-### Reporting storage statistics (local & CI)
+### Orchestrator audit log pagination correctness
 
-- `cargo test -p reporting` includes regression coverage for `get_storage_stats`: empty contract, many stored reports, partial archive, cleanup, and a second archive/cleanup cycle so active and archived counters stay consistent with on-chain maps.
-- Re-run after any change to `store_report`, `archive_old_reports`, `cleanup_old_reports`, or `update_storage_stats`.
+The orchestrator audit API (`get_audit_log(from_index, limit)`) supports cursor-based pagination for compliance and monitoring clients.
+
+**Pagination guarantees:**
+- Results are ordered from oldest to newest in the current bounded audit window.
+- `from_index` is a stable zero-based cursor within that bounded window.
+- `limit` is clamped to contract maximum capacity (`MAX_AUDIT_ENTRIES`) for predictable gas and memory usage.
+- Page-end calculation uses saturating arithmetic to prevent cursor overflow edge cases.
+- Out-of-range cursors return an empty page (safe default).
+
+**Security assumptions and notes:**
+- Consumers should treat the cursor as a position in the current rotated window, not an immutable global ID.
+- Log rotation drops oldest records at capacity, so clients should read promptly and persist externally if long-term retention is required.
+- Tests assert no duplicate entries across sequential pages under heavy execution history and rotation pressure.
+
+Run orchestrator tests (including pagination correctness coverage):
+
+```bash
+cargo test -p orchestrator
+```
 
 ## Gas Benchmarks
 
