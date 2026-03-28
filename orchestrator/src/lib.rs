@@ -14,6 +14,7 @@ use soroban_sdk::{
     contract, contractclient, contracterror, contractimpl, contracttype, panic_with_error,
     symbol_short, Address, Env, Symbol, Vec,
 };
+use remitwise_common::{EventCategory, EventPriority, RemitwiseEvents};
 
 #[cfg(test)]
 mod test;
@@ -258,10 +259,21 @@ impl Orchestrator {
         family_wallet_addr: Address,
         savings_addr: Address,
         goal_id: u32,
+        nonce: u64,
     ) -> Result<(), OrchestratorError> {
         Self::acquire_execution_lock(&env)?;
         caller.require_auth();
         let timestamp = env.ledger().timestamp();
+        // Address validation
+        Self::validate_two_addresses(&env, &family_wallet_addr, &savings_addr).map_err(|e| {
+            Self::release_execution_lock(&env);
+            e
+        })?;
+        // Nonce / replay protection
+        Self::consume_nonce(&env, &caller, symbol_short!("exec_sav"), nonce).map_err(|e| {
+            Self::release_execution_lock(&env);
+            e
+        })?;
 
         let result = (|| {
             Self::check_spending_limit(&env, &family_wallet_addr, &caller, amount)?;
@@ -280,6 +292,7 @@ impl Orchestrator {
         family_wallet_addr: Address,
         bills_addr: Address,
         bill_id: u32,
+        nonce: u64,
     ) -> Result<(), OrchestratorError> {
         Self::acquire_execution_lock(&env)?;
         caller.require_auth();
@@ -299,6 +312,7 @@ impl Orchestrator {
         family_wallet_addr: Address,
         insurance_addr: Address,
         policy_id: u32,
+        nonce: u64,
     ) -> Result<(), OrchestratorError> {
         Self::acquire_execution_lock(&env)?;
         caller.require_auth();

@@ -43,6 +43,18 @@ pub struct TrendData {
     pub change_percentage: i32, // Can be negative
 }
 
+/// Indicates the completeness of the data retrieved from external contracts
+#[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DataAvailability {
+    /// All external calls succeeded and data is complete
+    Complete = 0,
+    /// Some external calls failed or returned partial data
+    Partial = 1,
+    /// Critical external calls failed or addresses not configured, data is missing/default
+    Missing = 2,
+}
+
 /// Remittance summary report
 #[contracttype]
 #[derive(Clone)]
@@ -52,6 +64,7 @@ pub struct RemittanceSummary {
     pub category_breakdown: Vec<CategoryBreakdown>,
     pub period_start: u64,
     pub period_end: u64,
+    pub data_availability: DataAvailability,
 }
 
 /// Savings progress report
@@ -485,11 +498,24 @@ impl ReportingContract {
         period_start: u64,
         period_end: u64,
     ) -> RemittanceSummary {
+        user.require_auth();
         let addresses: ContractAddresses = env
             .storage()
             .instance()
-            .get(&symbol_short!("ADDRS"))
-            .unwrap_or_else(|| panic!("Contract addresses not configured"));
+            .get(&symbol_short!("ADDRS"));
+            
+        if addresses.is_none() {
+            return RemittanceSummary {
+                total_received: total_amount,
+                total_allocated: total_amount,
+                category_breakdown: Vec::new(&env),
+                period_start,
+                period_end,
+                data_availability: DataAvailability::Missing,
+            };
+        }
+        
+        let addresses = addresses.unwrap();
 
         let split_client = RemittanceSplitClient::new(env, &addresses.remittance_split);
         let split_percentages = split_client.get_split();
@@ -517,6 +543,7 @@ impl ReportingContract {
             category_breakdown: breakdown,
             period_start,
             period_end,
+            data_availability: availability,
         }
     }
 
@@ -861,9 +888,10 @@ impl ReportingContract {
     /// two data points are supplied.
     pub fn get_trend_analysis_multi(
         env: Env,
-        _user: Address,
+        user: Address,
         history: Vec<(u64, i128)>,
     ) -> Vec<TrendData> {
+        user.require_auth();
         let mut result = Vec::new(&env);
         let len = history.len();
         if len < 2 {

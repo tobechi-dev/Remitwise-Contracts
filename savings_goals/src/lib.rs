@@ -4,6 +4,7 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Map, String,
     Symbol, Vec,
 };
+use remitwise_common::{EventCategory, EventPriority, RemitwiseEvents};
 
 // Event topics
 const GOAL_CREATED: Symbol = symbol_short!("created");
@@ -394,23 +395,23 @@ impl SavingsGoalContract {
     }
 
     /// Set or transfer the upgrade admin role.
-    /// 
+    ///
     /// # Security Requirements
     /// - If no upgrade admin exists, caller must equal new_admin (bootstrap pattern)
     /// - If upgrade admin exists, only current upgrade admin can transfer
     /// - Caller must be authenticated via require_auth()
-    /// 
+    ///
     /// # Parameters
     /// - `caller`: The address attempting to set the upgrade admin
     /// - `new_admin`: The address to become the new upgrade admin
-    /// 
+    ///
     /// # Panics
     /// - If caller is unauthorized for the operation
     pub fn set_upgrade_admin(env: Env, caller: Address, new_admin: Address) {
         caller.require_auth();
-        
+
         let current_upgrade_admin = Self::get_upgrade_admin(&env);
-        
+
         // Authorization logic:
         // 1. If no upgrade admin exists, caller must equal new_admin (bootstrap)
         // 2. If upgrade admin exists, only current upgrade admin can transfer
@@ -427,21 +428,23 @@ impl SavingsGoalContract {
                     panic!("Unauthorized: only current upgrade admin can transfer");
                 }
             }
+        } else if caller != new_admin {
+            panic!("Unauthorized: bootstrap requires caller == new_admin");
         }
-        
+
         env.storage()
             .instance()
             .set(&symbol_short!("UPG_ADM"), &new_admin);
-        
+
         // Emit admin transfer event for audit trail
         env.events().publish(
             (symbol_short!("savings"), symbol_short!("adm_xfr")),
-            (current_upgrade_admin, new_admin.clone()),
+            (current_upgrade_admin.clone(), new_admin.clone()),
         );
     }
 
     /// Get the current upgrade admin address.
-    /// 
+    ///
     /// # Returns
     /// - `Some(Address)` if upgrade admin is set
     /// - `None` if no upgrade admin has been configured
@@ -462,8 +465,11 @@ impl SavingsGoalContract {
         env.storage()
             .instance()
             .set(&symbol_short!("VERSION"), &new_version);
-        env.events().publish(
-            (symbol_short!("savings"), symbol_short!("upgraded")),
+        RemitwiseEvents::emit(
+            &env,
+            EventCategory::System,
+            EventPriority::High,
+            symbol_short!("upgraded"),
             (prev, new_version),
         );
     }
@@ -529,8 +535,11 @@ impl SavingsGoalContract {
             .instance()
             .set(&symbol_short!("GOALS"), &goals);
 
-        env.events().publish(
-            (symbol_short!("savings"), symbol_short!("tags_add")),
+        RemitwiseEvents::emit(
+            &env,
+            EventCategory::State,
+            EventPriority::Medium,
+            symbol_short!("tags_add"),
             (goal_id, caller.clone(), tags.clone()),
         );
 
@@ -589,8 +598,11 @@ impl SavingsGoalContract {
             .instance()
             .set(&symbol_short!("GOALS"), &goals);
 
-        env.events().publish(
-            (symbol_short!("savings"), symbol_short!("tags_rem")),
+        RemitwiseEvents::emit(
+            &env,
+            EventCategory::State,
+            EventPriority::Medium,
+            symbol_short!("tags_rem"),
             (goal_id, caller.clone(), tags.clone()),
         );
 
@@ -671,9 +683,18 @@ impl SavingsGoalContract {
             target_date,
             timestamp: env.ledger().timestamp(),
         };
-        env.events().publish((GOAL_CREATED,), event);
-        env.events().publish(
-            (symbol_short!("savings"), SavingsEvent::GoalCreated),
+        RemitwiseEvents::emit(
+            &env,
+            EventCategory::State,
+            EventPriority::Medium,
+            symbol_short!("created"),
+            event,
+        );
+        RemitwiseEvents::emit(
+            &env,
+            EventCategory::State,
+            EventPriority::Medium,
+            symbol_short!("goal_new"),
             (next_id, owner),
         );
 
@@ -753,7 +774,7 @@ impl SavingsGoalContract {
             new_total,
             timestamp: env.ledger().timestamp(),
         };
-        env.events().publish((FUNDS_ADDED,), funds_event);
+        RemitwiseEvents::emit(&env, EventCategory::Transaction, EventPriority::Medium, symbol_short!("funds_add"), funds_event);
 
         if was_completed && !previously_completed {
             let completed_event = GoalCompletedEvent {
@@ -785,11 +806,11 @@ impl SavingsGoalContract {
         env: Env,
         caller: Address,
         contributions: Vec<ContributionItem>,
-    ) -> u32 {
+    ) -> Result<u32, SavingsGoalsError> {
         caller.require_auth();
         Self::require_not_paused(&env, pause_functions::ADD_TO_GOAL);
         if contributions.len() > MAX_BATCH_SIZE {
-            panic!("Batch too large");
+            return Err(SavingsGoalsError::InvalidAmount);
         }
         let goals_map: Map<u32, SavingsGoal> = env
             .storage()
@@ -798,14 +819,14 @@ impl SavingsGoalContract {
             .unwrap_or_else(|| Map::new(&env));
         for item in contributions.iter() {
             if item.amount <= 0 {
-                panic!("Amount must be positive");
+                return Err(SavingsGoalsError::InvalidAmount);
             }
             let goal = match goals_map.get(item.goal_id) {
                 Some(g) => g,
-                None => panic!("Goal not found"),
+                None => return Err(SavingsGoalsError::GoalNotFound),
             };
             if goal.owner != caller {
-                panic!("Not owner of all goals");
+                return Err(SavingsGoalsError::Unauthorized);
             }
         }
         Self::extend_instance_ttl(&env);
@@ -818,17 +839,15 @@ impl SavingsGoalContract {
         for item in contributions.iter() {
             let mut goal = match goals.get(item.goal_id) {
                 Some(g) => g,
-                None => panic!("Goal not found"),
+                None => return Err(SavingsGoalsError::GoalNotFound),
             };
             if goal.owner != caller {
-                panic!("Batch validation failed");
+                return Err(SavingsGoalsError::Unauthorized);
             }
-            goal.current_amount = match goal
-                .current_amount
-                .checked_add(item.amount) {
-                    Some(v) => v,
-                    None => panic!("overflow"),
-                };
+            goal.current_amount = match goal.current_amount.checked_add(item.amount) {
+                Some(v) => v,
+                None => panic!("overflow"),
+            };
             let new_total = goal.current_amount;
             let was_completed = new_total >= goal.target_amount;
             let previously_completed = (new_total - item.amount) >= goal.target_amount;
@@ -839,7 +858,13 @@ impl SavingsGoalContract {
                 new_total,
                 timestamp: env.ledger().timestamp(),
             };
-            env.events().publish((FUNDS_ADDED,), funds_event);
+            RemitwiseEvents::emit(
+                &env,
+                EventCategory::Transaction,
+                EventPriority::Medium,
+                symbol_short!("funds_add"),
+                funds_event,
+            );
             if was_completed && !previously_completed {
                 let completed_event = GoalCompletedEvent {
                     goal_id: item.goal_id,
@@ -864,11 +889,14 @@ impl SavingsGoalContract {
         env.storage()
             .instance()
             .set(&symbol_short!("GOALS"), &goals);
-        env.events().publish(
-            (symbol_short!("savings"), symbol_short!("batch_add")),
+        RemitwiseEvents::emit(
+            &env,
+            EventCategory::Transaction,
+            EventPriority::Medium,
+            symbol_short!("batch_add"),
             (count, caller),
         );
-        count
+        Ok(count)
     }
 
     /// Withdraws funds from an existing savings goal.
@@ -1163,7 +1191,9 @@ impl SavingsGoalContract {
 
         let mut result = Vec::new(&env);
         for i in start_index..end_index {
-            let goal_id = ids.get(i).unwrap_or_else(|| panic!("Pagination index out of sync"));
+            let goal_id = ids
+                .get(i)
+                .unwrap_or_else(|| panic!("Pagination index out of sync"));
             let goal = goals
                 .get(goal_id)
                 .unwrap_or_else(|| panic!("Pagination index out of sync"));
@@ -1713,12 +1743,10 @@ impl SavingsGoalContract {
             }
 
             if let Some(mut goal) = goals.get(schedule.goal_id) {
-                goal.current_amount = match goal
-                    .current_amount
-                    .checked_add(schedule.amount) {
-                        Some(v) => v,
-                        None => panic!("overflow"),
-                    };
+                goal.current_amount = match goal.current_amount.checked_add(schedule.amount) {
+                    Some(v) => v,
+                    None => panic!("overflow"),
+                };
 
                 let is_completed = goal.current_amount >= goal.target_amount;
                 goals.set(schedule.goal_id, goal.clone());

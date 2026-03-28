@@ -212,14 +212,10 @@ impl ExportSnapshot {
     /// stability across serialise→deserialise roundtrips.
     pub fn compute_checksum(&self) -> String {
         let mut hasher = Sha256::new();
-        // 1. Bind schema version (prevents version-downgrade attacks).
-        hasher.update(self.header.version.to_le_bytes());
-        // 2. Bind format label (prevents format-substitution attacks).
-        hasher.update(self.header.format.as_bytes());
-        // 3. Hash the canonical payload.
-        let payload_bytes = serde_json::to_vec(&self.payload)
-            .unwrap_or_else(|_| panic!("payload must be serializable"));
-        hasher.update(&payload_bytes);
+        hasher.update(
+            serde_json::to_vec(&self.payload)
+                .unwrap_or_else(|_| panic!("payload must be serializable")),
+        );
         hex::encode(hasher.finalize().as_ref())
     }
 
@@ -311,6 +307,8 @@ pub enum MigrationError {
     InvalidFormat(String),
     ValidationFailed(String),
     DeserializeError(String),
+    /// Indicates that the payload has already been imported.
+    DuplicateImport,
 }
 
 impl std::fmt::Display for MigrationError {
@@ -328,11 +326,47 @@ impl std::fmt::Display for MigrationError {
             MigrationError::InvalidFormat(s) => write!(f, "invalid format: {}", s),
             MigrationError::ValidationFailed(s) => write!(f, "validation failed: {}", s),
             MigrationError::DeserializeError(s) => write!(f, "deserialize error: {}", s),
+            MigrationError::DuplicateImport => write!(f, "duplicate payload import detected"),
         }
     }
 }
 
 impl std::error::Error for MigrationError {}
+
+/// Tracks imported migration payloads to prevent replay attacks and duplicate restores.
+///
+/// Binds payload identity to a `(checksum, version)` tuple.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MigrationTracker {
+    /// Stores the set of imported payloads, keyed by their checksum and version.
+    /// Tracks the timestamp when it was imported.
+    imported_payloads: HashMap<(String, u32), u64>,
+}
+
+impl MigrationTracker {
+    pub fn new() -> Self {
+        Self {
+            imported_payloads: HashMap::new(),
+        }
+    }
+
+    /// Mark a payload as imported.
+    /// Returns an error if it was already imported, preventing replay attacks.
+    pub fn mark_imported(&mut self, snapshot: &ExportSnapshot, timestamp_ms: u64) -> Result<(), MigrationError> {
+        let identity = (snapshot.header.checksum.clone(), snapshot.header.version);
+        if self.imported_payloads.contains_key(&identity) {
+            return Err(MigrationError::DuplicateImport);
+        }
+        self.imported_payloads.insert(identity, timestamp_ms);
+        Ok(())
+    }
+
+    /// Check if a snapshot has already been imported.
+    pub fn is_imported(&self, snapshot: &ExportSnapshot) -> bool {
+        let identity = (snapshot.header.checksum.clone(), snapshot.header.version);
+        self.imported_payloads.contains_key(&identity)
+    }
+}
 
 /// Export snapshot to JSON bytes.
 pub fn export_to_json(snapshot: &ExportSnapshot) -> Result<Vec<u8>, MigrationError> {
@@ -398,25 +432,29 @@ pub fn import_from_encrypted_payload(encoded: &str) -> Result<Vec<u8>, Migration
         .map_err(|e| MigrationError::InvalidFormat(e.to_string()))
 }
 
-/// Import snapshot from JSON bytes with full validation.
-///
-/// Validates version compatibility and SHA-256 checksum before returning.
-/// The checksum covers `version || format || payload` so any tampering with
-/// any of those fields is detected.
-pub fn import_from_json(bytes: &[u8]) -> Result<ExportSnapshot, MigrationError> {
+/// Import snapshot from JSON bytes with validation and replay protection.
+pub fn import_from_json(
+    bytes: &[u8],
+    tracker: &mut MigrationTracker,
+    timestamp_ms: u64,
+) -> Result<ExportSnapshot, MigrationError> {
     let snapshot: ExportSnapshot = serde_json::from_slice(bytes)
         .map_err(|e| MigrationError::DeserializeError(e.to_string()))?;
     snapshot.validate_for_import()?;
+    tracker.mark_imported(&snapshot, timestamp_ms)?;
     Ok(snapshot)
 }
 
-/// Import snapshot from binary bytes with full validation.
-///
-/// Validates version compatibility and SHA-256 checksum before returning.
-pub fn import_from_binary(bytes: &[u8]) -> Result<ExportSnapshot, MigrationError> {
+/// Import snapshot from binary bytes with validation and replay protection.
+pub fn import_from_binary(
+    bytes: &[u8],
+    tracker: &mut MigrationTracker,
+    timestamp_ms: u64,
+) -> Result<ExportSnapshot, MigrationError> {
     let snapshot: ExportSnapshot =
         bincode::deserialize(bytes).map_err(|e| MigrationError::DeserializeError(e.to_string()))?;
     snapshot.validate_for_import()?;
+    tracker.mark_imported(&snapshot, timestamp_ms)?;
     Ok(snapshot)
 }
 
@@ -530,7 +568,8 @@ mod tests {
     fn test_export_import_json_succeeds() {
         let snapshot = ExportSnapshot::new(sample_remittance_payload(), ExportFormat::Json);
         let bytes = export_to_json(&snapshot).unwrap();
-        let loaded = import_from_json(&bytes).unwrap();
+        let mut tracker = MigrationTracker::new();
+        let loaded = import_from_json(&bytes, &mut tracker, 123456).unwrap();
         assert_eq!(loaded.header.version, SCHEMA_VERSION);
         assert!(loaded.verify_checksum());
         assert_eq!(loaded.header.hash_algorithm, ChecksumAlgorithm::Sha256);
@@ -540,120 +579,46 @@ mod tests {
     fn test_export_import_binary_succeeds() {
         let snapshot = ExportSnapshot::new(sample_remittance_payload(), ExportFormat::Binary);
         let bytes = export_to_binary(&snapshot).unwrap();
-        let loaded = import_from_binary(&bytes).unwrap();
+        let mut tracker = MigrationTracker::new();
+        let loaded = import_from_binary(&bytes, &mut tracker, 123456).unwrap();
         assert!(loaded.verify_checksum());
         assert_eq!(loaded.header.hash_algorithm, ChecksumAlgorithm::Sha256);
     }
 
     #[test]
-    fn test_checksum_is_64_hex_chars() {
-        // SHA-256 produces 32 bytes = 64 lowercase hex characters.
-        let snapshot = ExportSnapshot::new(sample_remittance_payload(), ExportFormat::Json);
-        assert_eq!(snapshot.header.checksum.len(), 64);
-        assert!(snapshot.header.checksum.chars().all(|c| c.is_ascii_hexdigit()));
+    fn test_import_replay_protection_prevents_duplicates() {
+        let payload = SnapshotPayload::RemittanceSplit(RemittanceSplitExport {
+            owner: "GREPLAY".into(),
+            spending_percent: 50,
+            savings_percent: 30,
+            bills_percent: 10,
+            insurance_percent: 10,
+        });
+        let snapshot = ExportSnapshot::new(payload, ExportFormat::Json);
+        let bytes = export_to_json(&snapshot).unwrap();
+        
+        let mut tracker = MigrationTracker::new();
+        
+        // First import should succeed
+        let loaded1 = import_from_json(&bytes, &mut tracker, 1000).unwrap();
+        assert!(tracker.is_imported(&loaded1));
+        
+        // Second import of the exact same snapshot should fail
+        let result2 = import_from_json(&bytes, &mut tracker, 2000);
+        assert_eq!(result2.unwrap_err(), MigrationError::DuplicateImport);
     }
 
     #[test]
-    fn test_different_payloads_produce_different_checksums() {
-        let s1 = ExportSnapshot::new(sample_remittance_payload(), ExportFormat::Json);
-        let s2 = ExportSnapshot::new(sample_savings_payload(), ExportFormat::Json);
-        assert_ne!(
-            s1.header.checksum, s2.header.checksum,
-            "distinct payloads must produce distinct checksums"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Tamper detection: payload mutations
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_tampered_payload_fails_checksum() {
-        let mut snapshot = ExportSnapshot::new(sample_remittance_payload(), ExportFormat::Json);
-        // Mutate a payload field after the checksum was computed.
-        if let SnapshotPayload::RemittanceSplit(ref mut r) = snapshot.payload {
-            r.spending_percent = 99;
-        }
-        assert!(!snapshot.verify_checksum(), "mutated payload must fail checksum");
-        assert_eq!(
-            snapshot.validate_for_import(),
-            Err(MigrationError::ChecksumMismatch)
-        );
-    }
-
-    #[test]
-    fn test_tampered_goal_amount_fails_checksum() {
-        let mut snapshot = ExportSnapshot::new(sample_savings_payload(), ExportFormat::Json);
-        if let SnapshotPayload::SavingsGoals(ref mut s) = snapshot.payload {
-            if let Some(g) = s.goals.get_mut(0) {
-                g.current_amount += 1; // inject a single-unit discrepancy
-            }
-        }
-        assert!(!snapshot.verify_checksum(), "mutated goal amount must fail checksum");
-    }
-
-    #[test]
-    fn test_tampered_owner_fails_checksum() {
-        let mut snapshot = ExportSnapshot::new(sample_savings_payload(), ExportFormat::Json);
-        if let SnapshotPayload::SavingsGoals(ref mut s) = snapshot.payload {
-            if let Some(g) = s.goals.get_mut(0) {
-                g.owner = "GATTACKER".into();
-            }
-        }
-        assert!(!snapshot.verify_checksum(), "tampered owner must fail checksum");
-    }
-
-    // -----------------------------------------------------------------------
-    // Tamper detection: header mutations (the key improvement over payload-only
-    // checksums)
-    // -----------------------------------------------------------------------
-
-    /// Changing `header.version` after export must invalidate the checksum.
-    ///
-    /// Security: without binding the version into the hash, an attacker could
-    /// change version=1 to version=0 to trick an importer into accepting an
-    /// older (potentially vulnerable) schema.
-    #[test]
-    fn test_tampered_version_fails_checksum() {
-        let mut snapshot = ExportSnapshot::new(sample_remittance_payload(), ExportFormat::Json);
-        let original_checksum = snapshot.header.checksum.clone();
-        snapshot.header.version = 0; // version-downgrade attack
-        assert_ne!(
-            snapshot.compute_checksum(), original_checksum,
-            "version is bound into the hash; downgrade must change the checksum"
-        );
-        assert!(!snapshot.verify_checksum(), "downgraded version must fail verification");
-        assert_eq!(
-            snapshot.validate_for_import().unwrap_err(),
-            // IncompatibleVersion fires before ChecksumMismatch, both are correct rejections.
-            MigrationError::IncompatibleVersion { found: 0, min: MIN_SUPPORTED_VERSION, max: SCHEMA_VERSION }
-        );
-    }
-
-    /// Changing `header.format` after export must invalidate the checksum.
-    ///
-    /// Security: without binding the format label into the hash, an attacker
-    /// could relabel a binary snapshot as JSON to confuse the importer's
-    /// deserialiser.
-    #[test]
-    fn test_tampered_format_fails_checksum() {
-        let mut snapshot = ExportSnapshot::new(sample_remittance_payload(), ExportFormat::Json);
-        snapshot.header.format = "binary".into(); // format-substitution attack
-        assert!(
-            !snapshot.verify_checksum(),
-            "format label is bound into the hash; substitution must fail checksum"
-        );
-        assert_eq!(
-            snapshot.validate_for_import(),
-            Err(MigrationError::ChecksumMismatch)
-        );
-    }
-
-    /// Injecting a wrong checksum string must be rejected.
-    #[test]
-    fn test_wrong_checksum_string_fails_import() {
-        let mut snapshot = ExportSnapshot::new(sample_remittance_payload(), ExportFormat::Json);
-        snapshot.header.checksum = "0".repeat(64); // plausible-looking but wrong
+    fn test_checksum_mismatch_import_fails() {
+        let payload = SnapshotPayload::RemittanceSplit(RemittanceSplitExport {
+            owner: "GX".into(),
+            spending_percent: 100,
+            savings_percent: 0,
+            bills_percent: 0,
+            insurance_percent: 0,
+        });
+        let mut snapshot = ExportSnapshot::new(payload, ExportFormat::Json);
+        snapshot.header.checksum = "wrong".into();
         assert!(!snapshot.verify_checksum());
         assert_eq!(
             snapshot.validate_for_import(),

@@ -17,6 +17,7 @@
 9. [Running Tests](#running-tests)
 10. [Integration Guide](#integration-guide)
 11. [Security Notes](#security-notes)
+12. [Security Assumptions](#security-assumptions)
 
 ---
 
@@ -164,7 +165,26 @@ Returns the new policy's `u32` ID.
 
 Records a premium payment. `amount` must equal the policy's `monthly_premium` exactly.
 
-Updates `last_payment_at` and advances `next_payment_due` by 30 days.
+Updates `last_payment_at` and advances `next_payment_due` deterministically.
+
+#### Date Progression Logic
+
+The next payment date is calculated to prevent schedule drift:
+
+- **Early/On-time payment**: The next due date advances by exactly one 30-day interval
+  from the *previous* due date (not the current timestamp).
+- **Late payment**: The next due date advances from the previous due date by 30 days.
+  If that new date is still in the past, it continues advancing by 30-day intervals
+  until the next due date is in the future.
+
+This ensures that:
+1. Early payments don't shift the schedule forward (no "drift bonus")
+2. Late payments don't double-cover periods (no skipped periods)
+3. The payment schedule remains deterministic regardless of payment timing
+
+**Example**: If `next_payment_due` is January 15th and payment is made on January 10th,
+the new `next_payment_due` will be February 14th (January 15th + 30 days), not
+February 9th (January 10th + 30 days).
 
 **Emits**: `PremiumPaidEvent`
 
@@ -173,6 +193,22 @@ Updates `last_payment_at` and advances `next_payment_due` by 30 days.
 ### `set_external_ref(owner, policy_id, ext_ref) → bool`
 
 Owner-only. Updates or clears the `external_ref` field of a policy.
+
+**Parameters**
+
+| Parameter    | Type              | Description                              |
+|--------------|-------------------|------------------------------------------|
+| `owner`      | `Address`         | Contract owner (must authorize)          |
+| `policy_id`  | `u32`             | Target policy ID                         |
+| `ext_ref`    | `Option<String>`  | New external reference (1–128 bytes or None) |
+
+**Validates**
+
+- Caller is the contract owner
+- Policy exists
+- External ref length is in range (1–128 bytes if Some, or None to clear)
+
+**Emits**: `ExternalRefUpdatedEvent`
 
 ---
 
@@ -246,6 +282,42 @@ Uses `saturating_add` to prevent overflow on extremely large portfolios.
 
 ---
 
+### `add_tag(caller, policy_id, tag)`
+
+Attaches a string label to a policy. Duplicate tags are silently ignored.
+
+**Parameters**
+
+| Parameter   | Type      | Description                                              |
+|-------------|-----------|----------------------------------------------------------|
+| `caller`    | `Address` | Must be the policy owner or contract admin (must sign)   |
+| `policy_id` | `u32`     | ID of the target policy                                  |
+| `tag`       | `String`  | Label to attach (1–32 bytes, case-sensitive)             |
+
+**Emits**: `("insure", "tag_added")` with data `(policy_id, tag)` — only when
+the tag is new. No event is emitted for a duplicate call.
+
+---
+
+### `remove_tag(caller, policy_id, tag)`
+
+Removes a string label from a policy. If the tag is not present the function
+returns gracefully without panicking.
+
+**Parameters**
+
+| Parameter   | Type      | Description                                              |
+|-------------|-----------|----------------------------------------------------------|
+| `caller`    | `Address` | Must be the policy owner or contract admin (must sign)   |
+| `policy_id` | `u32`     | ID of the target policy                                  |
+| `tag`       | `String`  | Label to remove (case-sensitive)                         |
+
+**Emits**:
+- `("insure", "tag_rmvd")` with data `(policy_id, tag)` when the tag was found and removed.
+- `("insure", "tag_miss")` with data `(policy_id, tag)` when the tag was not present.
+
+---
+
 ## Events
 
 All events are published via `env.events().publish(topic, data)` and can be
@@ -291,6 +363,24 @@ Published on successful `deactivate_policy`.
 | `timestamp` | `u64`    |
 
 Topic: `("deactive", "policy")`
+
+### `ExternalRefUpdatedEvent`
+
+Published on successful `set_external_ref`.
+
+| Field              | Type               |
+|--------------------|--------------------|
+| `policy_id`        | `u32`              |
+| `name`             | `String`           |
+| `new_external_ref` | `Option<String>`   |
+| `old_external_ref` | `Option<String>`   |
+| `timestamp`        | `u64`              |
+
+**Description**: Tracks external reference mutations for audit trails. The `old_external_ref`
+and `new_external_ref` fields capture the complete state transition (None→Some, Some→Some,
+Some→None), allowing off-chain systems to reconcile policy metadata across multiple updates.
+
+Topic: `("pol", "ext_upd")`
 
 ---
 
@@ -348,13 +438,26 @@ RUST_TEST_THREADS=1 cargo test -p insurance --test gas_bench -- --nocapture
 ### Expected output (all tests passing)
 
 ```
-running 57 tests
+running 82 tests
 test tests::test_init_success ... ok
 test tests::test_create_health_policy_success ... ok
 ...
-test result: ok. 57 passed; 0 failed; 0 ignored
+test tests::test_set_external_ref_on_deactivated_policy_succeeds ... ok
+test result: ok. 82 passed; 0 failed; 0 ignored
 ```
 
+The comprehensive test suite includes:
+- 4 basic external_ref tests (set, clear, authorization, length validation)
+- 18 exhaustive external_ref mutation tests covering:
+  - Event emission validation
+  - State transitions (None→Some, Some→Some, Some→None)
+  - Idempotent and sequential mutations
+  - Persistence across policy operations
+  - Boundary conditions (min/max length)
+  - Empty string and special character handling
+  - Policy isolation and field preservation
+  - Deactivated policy behavior
+  - Authorization enforcement
 ---
 
 ## Integration Guide
