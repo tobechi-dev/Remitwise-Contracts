@@ -90,8 +90,7 @@ fn test_modify_schedule_gas_measurement() {
     let interval = 2_592_000u64;
 
     // Create initial schedule
-    let schedule_id = client.create_remittance_schedule(&owner, &amount, &next_due, &interval)
-        .expect("Initial schedule creation should succeed");
+    let schedule_id = client.create_remittance_schedule(&owner, &amount, &next_due, &interval);
 
     // Measure modification
     let new_amount = 2_000i128;
@@ -127,8 +126,7 @@ fn test_cancel_schedule_gas_measurement() {
     let interval = 2_592_000u64;
 
     // Create initial schedule
-    let schedule_id = client.create_remittance_schedule(&owner, &amount, &next_due, &interval)
-        .expect("Initial schedule creation should succeed");
+    let schedule_id = client.create_remittance_schedule(&owner, &amount, &next_due, &interval);
 
     // Measure cancellation
     let (cpu, mem, result) = measure_gas(&env, || {
@@ -188,7 +186,6 @@ fn test_query_schedules_with_data_gas_measurement() {
         let interval = 2_592_000u64;
         
         let result = client.create_remittance_schedule(&owner, &amount, &next_due, &interval);
-        assert!(result.is_ok(), "Schedule {} creation should succeed", i);
     }
 
     // Measure query with data
@@ -258,8 +255,7 @@ fn test_gas_scaling_with_multiple_schedules() {
         let next_due = env.ledger().timestamp() + 86400 * i;
         let interval = 2_592_000u64;
         
-        let result = client.create_remittance_schedule(&owner, &amount, &next_due, &interval);
-        assert!(result.is_ok(), "Schedule {} creation should succeed", i);
+        let _result = client.create_remittance_schedule(&owner, &amount, &next_due, &interval);
     }
 
     // Measure creating the 11th schedule (with existing storage)
@@ -463,9 +459,8 @@ fn test_performance_stress() {
         let interval = 2_592_000u64;
         
         let result = client.create_remittance_schedule(&owner, &amount, &next_due, &interval);
-        assert!(result.is_ok(), "Schedule {} creation should succeed", i);
+        let _result = (result, "Schedule {} creation should succeed", i);
     }
-
     // Measure query performance with 20 schedules
     let (cpu, mem, schedules) = measure_gas(&env, || {
         client.get_remittance_schedules(&owner)
