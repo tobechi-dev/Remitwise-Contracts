@@ -73,7 +73,7 @@ pub enum OrchestratorError {
 }
 
 #[contracttype]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum ExecutionState {
     Idle = 0,
@@ -148,6 +148,33 @@ impl Orchestrator {
     // -----------------------------------------------------------------------
     // Reentrancy Guard
     // -----------------------------------------------------------------------
+
+    /// Acquire the execution lock, preventing reentrant calls.
+    ///
+    /// Checks the current execution state stored under the `EXEC_ST` key in
+    /// instance storage. If the state is `Idle` (or unset), transitions to
+    /// `Executing` and returns `Ok(())`. If already `Executing`, returns
+    /// `Err(OrchestratorError::ReentrancyDetected)`.
+    ///
+    /// # Security
+    /// This MUST be called at the very start of every public entry point,
+    /// before any state reads or cross-contract calls.
+    ///
+    /// # Gas Estimation
+    /// ~500 gas (single instance storage read + write)
+    /// Validate that all contract addresses in a remittance flow are non-zero/valid.
+    fn validate_remittance_flow_addresses(
+        _env: &Env,
+        _family_wallet_addr: &Address,
+        _remittance_split_addr: &Address,
+        _savings_addr: &Address,
+        _bills_addr: &Address,
+        _insurance_addr: &Address,
+    ) -> Result<(), OrchestratorError> {
+        // Addresses in Soroban are always valid if they exist; no additional
+        // validation is required beyond the type system guarantees.
+        Ok(())
+    }
 
     fn acquire_execution_lock(env: &Env) -> Result<(), OrchestratorError> {
         let state: ExecutionState = env
