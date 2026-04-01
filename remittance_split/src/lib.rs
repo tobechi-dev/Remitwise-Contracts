@@ -233,6 +233,25 @@ pub enum ScheduleEvent {
     Cancelled,
 }
 
+/// Domain-separated authorization payload for split operations.
+///
+/// Includes the full set of initialization parameters so that the
+/// signer commits to the exact configuration being applied.
+#[contracttype]
+#[derive(Clone)]
+pub struct SplitAuthPayload {
+    pub domain_id: Symbol,
+    pub network_id: BytesN<32>,
+    pub contract_addr: Address,
+    pub owner_addr: Address,
+    pub nonce_val: u64,
+    pub usdc_contract: Address,
+    pub spending_percent: u32,
+    pub savings_percent: u32,
+    pub bills_percent: u32,
+    pub insurance_percent: u32,
+}
+
 /// Current snapshot schema version. Bumped to 2 for FNV-1a checksum + exported_at field.
 const SCHEMA_VERSION: u32 = 2;
 /// Oldest snapshot schema version this contract can import. Enables backward compat.
