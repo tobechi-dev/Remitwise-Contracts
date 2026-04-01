@@ -1,7 +1,7 @@
 use remittance_split::{AccountGroup, RemittanceSplit, RemittanceSplitClient};
 use soroban_sdk::testutils::{Address as AddressTrait, EnvTestConfig, Ledger, LedgerInfo};
 use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{symbol_short, Address, Env};
 
 fn bench_env() -> Env {
     let env = Env::new_with_config(EnvTestConfig {
@@ -64,18 +64,16 @@ fn bench_distribute_usdc_worst_case() {
 
     // nonce after initialize_split = 1
     let nonce = 1u64;
-    let deadline = 1_700_003_600u64; // within 1 hour of ledger timestamp
-    let op_bits: u64 = soroban_sdk::symbol_short!("distrib").to_val().get_payload();
-    let amt_lo = amount as u64;
-    let amt_hi = (amount >> 64) as u64;
-    let request_hash = op_bits
-        .wrapping_add(nonce)
-        .wrapping_add(amt_lo)
-        .wrapping_add(amt_hi)
-        .wrapping_add(deadline)
-        .wrapping_mul(1_000_000_007);
+    let deadline = env.ledger().timestamp() + 3600;
+    let request_hash = RemittanceSplit::compute_request_hash(
+        symbol_short!("distrib"),
+        payer.clone(),
+        nonce,
+        amount,
+        deadline,
+    );
     let (cpu, mem, distributed) = measure(&env, || {
-        client.distribute_usdc(&token_addr, &payer, &nonce, &deadline, &request_hash, &accounts, &amount)
+        client.distribute_usdc(&token_addr, &payer, &nonce, &0, &0, &accounts, &amount)
     });
     assert!(distributed);
 
@@ -101,6 +99,7 @@ fn bench_create_remittance_schedule() {
     let (cpu, mem, schedule_id) = measure(&env, || {
         client.create_remittance_schedule(&owner, &amount, &next_due, &interval)
     });
+    
     
     assert_eq!(schedule_id, 1);
 
@@ -137,6 +136,7 @@ fn bench_create_multiple_schedules() {
     let (cpu, mem, _schedule_id) = measure(&env, || {
         client.create_remittance_schedule(&owner, &amount, &next_due, &interval)
     });
+    
 
     println!(
         r#"{{"contract":"remittance_split","method":"create_remittance_schedule","scenario":"11th_schedule_with_existing","cpu":{},"mem":{}}}"#,
