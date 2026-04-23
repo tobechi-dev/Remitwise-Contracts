@@ -8,8 +8,8 @@
 
 use bill_payments::{BillPayments, BillPaymentsClient};
 use insurance::{Insurance, InsuranceClient};
-use remitwise_common::CoverageType;
 use remittance_split::{RemittanceSplit, RemittanceSplitClient};
+use remitwise_common::CoverageType;
 use savings_goals::{SavingsGoalContract, SavingsGoalContractClient};
 use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 use soroban_sdk::{Address, Env, String as SorobanString};
@@ -93,10 +93,16 @@ fn test_multi_contract_user_flow() {
     let bills_amount = amounts.get(2).unwrap();
     let insurance_amount = amounts.get(3).unwrap();
 
-    assert_eq!(spending_amount, 4_000i128, "Spending amount should be 4,000");
+    assert_eq!(
+        spending_amount, 4_000i128,
+        "Spending amount should be 4,000"
+    );
     assert_eq!(savings_amount, 3_000i128, "Savings amount should be 3,000");
     assert_eq!(bills_amount, 2_000i128, "Bills amount should be 2,000");
-    assert_eq!(insurance_amount, 1_000i128, "Insurance amount should be 1,000");
+    assert_eq!(
+        insurance_amount, 1_000i128,
+        "Insurance amount should be 1,000"
+    );
 
     let total_allocated = spending_amount + savings_amount + bills_amount + insurance_amount;
     assert_eq!(

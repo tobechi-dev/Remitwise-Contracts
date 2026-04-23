@@ -4,11 +4,11 @@
 #[cfg(test)]
 mod test;
 
+use remitwise_common::{clamp_limit, EventCategory, EventPriority, RemitwiseEvents};
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token::TokenClient, vec,
     Address, BytesN, Env, IntoVal, Map, Symbol, Vec,
 };
-use remitwise_common::{clamp_limit, EventCategory, EventPriority, RemitwiseEvents};
 
 // Event topics
 const SPLIT_INITIALIZED: Symbol = symbol_short!("init");
@@ -1018,7 +1018,11 @@ impl RemittanceSplit {
             Self::append_audit(&env, symbol_short!("import"), &caller, false);
             return Err(RemittanceSplitError::UnsupportedVersion);
         }
-        let expected = Self::compute_checksum(snapshot.schema_version, &snapshot.config, &snapshot.schedules);
+        let expected = Self::compute_checksum(
+            snapshot.schema_version,
+            &snapshot.config,
+            &snapshot.schedules,
+        );
         if snapshot.checksum != expected {
             Self::append_audit(&env, symbol_short!("import"), &caller, false);
             return Err(RemittanceSplitError::ChecksumMismatch);
@@ -1096,9 +1100,11 @@ impl RemittanceSplit {
             env.storage()
                 .persistent()
                 .set(&DataKey::Schedule(schedule.id), &schedule);
-            env.storage()
-                .persistent()
-                .extend_ttl(&DataKey::Schedule(schedule.id), INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+            env.storage().persistent().extend_ttl(
+                &DataKey::Schedule(schedule.id),
+                INSTANCE_LIFETIME_THRESHOLD,
+                INSTANCE_BUMP_AMOUNT,
+            );
         }
 
         // Reconstruct owner index
@@ -1109,14 +1115,18 @@ impl RemittanceSplit {
         env.storage()
             .persistent()
             .set(&DataKey::OwnerSchedules(caller.clone()), &owner_ids);
-        env.storage()
-            .persistent()
-            .extend_ttl(&DataKey::OwnerSchedules(caller.clone()), INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        env.storage().persistent().extend_ttl(
+            &DataKey::OwnerSchedules(caller.clone()),
+            INSTANCE_LIFETIME_THRESHOLD,
+            INSTANCE_BUMP_AMOUNT,
+        );
 
         Self::increment_nonce(&env, &caller)?;
         Self::append_audit(&env, symbol_short!("import"), &caller, true);
-        env.events()
-            .publish((symbol_short!("split"), SplitEvent::SnapshotImported), caller);
+        env.events().publish(
+            (symbol_short!("split"), SplitEvent::SnapshotImported),
+            caller,
+        );
         Ok(true)
     }
 
@@ -1398,7 +1408,11 @@ impl RemittanceSplit {
         Ok(())
     }
 
-    fn compute_checksum(version: u32, config: &SplitConfig, schedules: &Vec<RemittanceSchedule>) -> u64 {
+    fn compute_checksum(
+        version: u32,
+        config: &SplitConfig,
+        schedules: &Vec<RemittanceSchedule>,
+    ) -> u64 {
         let v = version as u64;
         let s = config.spending_percent as u64;
         let g = config.savings_percent as u64;
@@ -1592,9 +1606,11 @@ impl RemittanceSplit {
         env.storage()
             .persistent()
             .set(&DataKey::Schedule(next_schedule_id), &schedule);
-        env.storage()
-            .persistent()
-            .extend_ttl(&DataKey::Schedule(next_schedule_id), INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Schedule(next_schedule_id),
+            INSTANCE_LIFETIME_THRESHOLD,
+            INSTANCE_BUMP_AMOUNT,
+        );
 
         // 2. Update owner's schedule index
         let mut owner_schedules: Vec<u32> = env
@@ -1606,9 +1622,11 @@ impl RemittanceSplit {
         env.storage()
             .persistent()
             .set(&DataKey::OwnerSchedules(owner.clone()), &owner_schedules);
-        env.storage()
-            .persistent()
-            .extend_ttl(&DataKey::OwnerSchedules(owner.clone()), INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        env.storage().persistent().extend_ttl(
+            &DataKey::OwnerSchedules(owner.clone()),
+            INSTANCE_LIFETIME_THRESHOLD,
+            INSTANCE_BUMP_AMOUNT,
+        );
 
         env.storage()
             .instance()
@@ -1691,9 +1709,11 @@ impl RemittanceSplit {
         env.storage()
             .persistent()
             .set(&DataKey::Schedule(schedule_id), &schedule);
-        env.storage()
-            .persistent()
-            .extend_ttl(&DataKey::Schedule(schedule_id), INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Schedule(schedule_id),
+            INSTANCE_LIFETIME_THRESHOLD,
+            INSTANCE_BUMP_AMOUNT,
+        );
 
         RemitwiseEvents::emit(
             &env,
@@ -1742,9 +1762,11 @@ impl RemittanceSplit {
         env.storage()
             .persistent()
             .set(&DataKey::Schedule(schedule_id), &schedule);
-        env.storage()
-            .persistent()
-            .extend_ttl(&DataKey::Schedule(schedule_id), INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Schedule(schedule_id),
+            INSTANCE_LIFETIME_THRESHOLD,
+            INSTANCE_BUMP_AMOUNT,
+        );
 
         RemitwiseEvents::emit(
             &env,
@@ -1774,6 +1796,8 @@ impl RemittanceSplit {
     }
 
     pub fn get_remittance_schedule(env: Env, schedule_id: u32) -> Option<RemittanceSchedule> {
-        env.storage().persistent().get(&DataKey::Schedule(schedule_id))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Schedule(schedule_id))
     }
 }

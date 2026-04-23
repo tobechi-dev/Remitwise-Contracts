@@ -1,8 +1,8 @@
 #![no_std]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 use soroban_sdk::{
-    contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, Address, Env,
-    Map, Vec,
+    contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, Address,
+    Env, Map, Vec,
 };
 
 use remitwise_common::Category;
@@ -531,10 +531,8 @@ impl ReportingContract {
         period_start: u64,
         period_end: u64,
     ) -> RemittanceSummary {
-        let addresses: Option<ContractAddresses> = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("ADDRS"));
+        let addresses: Option<ContractAddresses> =
+            env.storage().instance().get(&symbol_short!("ADDRS"));
 
         if addresses.is_none() {
             return RemittanceSummary {

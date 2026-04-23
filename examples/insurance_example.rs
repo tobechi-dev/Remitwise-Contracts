@@ -26,16 +26,14 @@ fn main() {
         "Creating policy: '{:?}' with premium: {} and coverage: {}",
         policy_name, monthly_premium, coverage_amount
     );
-    let policy_id = client
-        .create_policy(
-            &owner,
-            &policy_name,
-            &coverage_type,
-            &monthly_premium,
-            &coverage_amount,
-            &None,
-        )
-        ;
+    let policy_id = client.create_policy(
+        &owner,
+        &policy_name,
+        &coverage_type,
+        &monthly_premium,
+        &coverage_amount,
+        &None,
+    );
     println!("Policy created successfully with ID: {}", policy_id);
 
     // 5. [Read] List active policies
