@@ -522,12 +522,11 @@ impl ReportingContract {
         period_end: u64,
     ) -> RemittanceSummary {
         user.require_auth();
-        Self::get_remittance_summary_internal(&env, user.clone(), total_amount, period_start, period_end)
+        Self::get_remittance_summary_internal(&env, total_amount, period_start, period_end)
     }
 
     fn get_remittance_summary_internal(
         env: &Env,
-        user: Address,
         total_amount: i128,
         period_start: u64,
         period_end: u64,
@@ -870,7 +869,7 @@ impl ReportingContract {
         let health_score =
             Self::calculate_health_score_internal(&env, user.clone(), total_remittance);
         let remittance_summary =
-            Self::get_remittance_summary_internal(&env, user.clone(), total_remittance, period_start, period_end);
+            Self::get_remittance_summary_internal(&env, total_remittance, period_start, period_end);
         let savings_report =
             Self::get_savings_report_internal(&env, user.clone(), period_start, period_end);
         let bill_compliance =

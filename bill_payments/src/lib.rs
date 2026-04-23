@@ -195,33 +195,6 @@ impl BillPayments {
         String::from_str(env, upper_str)
     }
 
-    fn validate_currency(currency: &String) -> Result<(), Error> {
-        let len = currency.len() as usize;
-        if len == 0 {
-            return Ok(()); // Will be normalized to "XLM"
-        }
-        let mut buf = [0u8; 64];
-        let copy_len = len.min(buf.len());
-        currency.copy_into_slice(&mut buf[..copy_len]);
-        let s = &buf[..copy_len];
-        // Trim spaces
-        let start = s.iter().position(|&b| b != b' ').unwrap_or(copy_len);
-        let end = s.iter().rposition(|&b| b != b' ').map(|i| i + 1).unwrap_or(0);
-        if start >= end {
-            return Ok(()); // empty after trim → will default to XLM
-        }
-        let trimmed = &s[start..end];
-        if trimmed.len() > 12 {
-            return Err(Error::InvalidCurrency);
-        }
-        for &b in trimmed {
-            if !b.is_ascii_alphanumeric() {
-                return Err(Error::InvalidCurrency);
-            }
-        }
-        Ok(())
-    }
-
     fn get_pause_admin(env: &Env) -> Option<Address> {
         env.storage().instance().get(&symbol_short!("PAUSE_ADM"))
     }
@@ -3183,10 +3156,3 @@ mod test {
     }
 }
 
-fn extend_instance_ttl(env: &Env) {
-    // Extend the contract instance itself
-    env.storage().instance().extend_ttl(
-        INSTANCE_LIFETIME_THRESHOLD, 
-        INSTANCE_BUMP_AMOUNT
-    );
-}

@@ -81,10 +81,6 @@ const MAX_USED_NONCES_PER_ADDR: u32 = 256;
 /// Maximum ledger seconds a signed request may remain valid after creation.
 const MAX_DEADLINE_WINDOW_SECS: u64 = 3600; // 1 hour
 
-// Schedule guardrail constants
-const MIN_SCHEDULE_INTERVAL: u64 = 3600; // 1 hour
-const MAX_SCHEDULE_LEAD_TIME: u64 = 31536000; // 1 year (365 days)
-
 /// Split configuration with owner tracking for access control
 #[derive(Clone)]
 #[contracttype]
