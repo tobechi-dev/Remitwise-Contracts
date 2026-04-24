@@ -475,7 +475,7 @@ impl SavingsGoalContract {
                     soroban_sdk::panic_with_error!(env, SavingsGoalsError::InvalidTagContent);
                 }
             }
-            normalized_tags.push_back(String::from_slice(env, &buf[..len as usize]));
+            normalized_tags.push_back(String::from_bytes(env, &buf[..len as usize]));
         }
         normalized_tags
     }
