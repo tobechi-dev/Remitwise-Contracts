@@ -2609,3 +2609,157 @@ fn test_disabled_rollover_only_checks_single_tx_limits() {
     let result = client.try_withdraw(&member, &token_contract.address(), &recipient, &500_0000000);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_rollover_accumulates_and_blocks_at_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = FamilyWalletClient::new(&env, &env.register_contract(None, FamilyWallet));
+
+    let owner = Address::generate(&env);
+    let member = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let recipient = Address::generate(&env);
+    StellarAssetClient::new(&env, &token_contract.address()).mint(&member, &200_0000000);
+
+    client.init(&owner, &vec![&env]);
+    client.add_member(&owner, &member, &FamilyRole::Member, &10_0000000);
+
+    let precision_limit = PrecisionSpendingLimit {
+        limit: 100_000000, // 100 XLM daily limit
+        min_precision: 1_000000,
+        max_single_tx: 80_000000, // 80 XLM max per transaction
+        enable_rollover: true,
+    };
+    assert!(client.set_precision_spending_limit(&owner, &member, &precision_limit));
+
+    let day_start = 1640995200u64;
+    env.ledger().with_mut(|li| li.timestamp = day_start);
+
+    // First spend: 60 XLM -> succeeds, tracker accumulates
+    let tx1 = client.withdraw(&member, &token_contract.address(), &recipient, &60_000000);
+    assert_eq!(tx1, 0);
+
+    let tracker = client.get_spending_tracker(&member).unwrap();
+    assert_eq!(tracker.current_spent, 60_000000);
+    assert_eq!(tracker.tx_count, 1);
+
+    // Second spend: 60 XLM -> would exceed limit (60+60 > 100), should fail
+    let result = client.try_withdraw(&member, &token_contract.address(), &recipient, &60_000000);
+    assert!(result.is_err());
+
+    // Verify tracker unchanged (still at 60)
+    let tracker = client.get_spending_tracker(&member).unwrap();
+    assert_eq!(tracker.current_spent, 60_000000);
+    assert_eq!(tracker.tx_count, 1);
+}
+
+#[test]
+fn test_rollover_allows_multiple_under_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = FamilyWalletClient::new(&env, &env.register_contract(None, FamilyWallet));
+
+    let owner = Address::generate(&env);
+    let member = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let recipient = Address::generate(&env);
+    StellarAssetClient::new(&env, &token_contract.address()).mint(&member, &1000_0000000);
+
+    client.init(&owner, &vec![&env]);
+    client.add_member(&owner, &member, &FamilyRole::Member, &10_0000000);
+
+    let precision_limit = PrecisionSpendingLimit {
+        limit: 100_000000, // 100 XLM daily limit
+        min_precision: 1_000000,
+        max_single_tx: 50_000000, // 50 XLM max per transaction
+        enable_rollover: true,
+    };
+    assert!(client.set_precision_spending_limit(&owner, &member, &precision_limit));
+
+    let day_start = 1640995200u64;
+    env.ledger().with_mut(|li| li.timestamp = day_start);
+
+    // Multiple smaller transactions that sum to under limit
+    let tx1 = client.withdraw(&member, &token_contract.address(), &recipient, &10_000000);
+    assert_eq!(tx1, 0);
+
+    let tx2 = client.withdraw(&member, &token_contract.address(), &recipient, &20_000000);
+    assert_eq!(tx2, 0);
+
+    let tx3 = client.withdraw(&member, &token_contract.address(), &recipient, &30_000000);
+    assert_eq!(tx3, 0);
+
+    // Total: 10+20+30 = 60 XLM, should be under 100 XLM limit
+    let tracker = client.get_spending_tracker(&member).unwrap();
+    assert_eq!(tracker.current_spent, 60_000000);
+    assert_eq!(tracker.tx_count, 3);
+
+    // One more 30 XLM -> 90 XLM total, still under
+    let tx4 = client.withdraw(&member, &token_contract.address(), &recipient, &30_000000);
+    assert_eq!(tx4, 0);
+
+    let tracker = client.get_spending_tracker(&member).unwrap();
+    assert_eq!(tracker.current_spent, 90_000000);
+    assert_eq!(tracker.tx_count, 4);
+
+    // One more 20 XLM -> 110 XLM would exceed, should fail
+    let result = client.try_withdraw(&member, &token_contract.address(), &recipient, &20_000000);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_rollover_tracker_removed_on_disable() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = FamilyWalletClient::new(&env, &env.register_contract(None, FamilyWallet));
+
+    let owner = Address::generate(&env);
+    let member = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let recipient = Address::generate(&env);
+    StellarAssetClient::new(&env, &token_contract.address()).mint(&member, &1000_0000000);
+
+    client.init(&owner, &vec![&env]);
+    client.add_member(&owner, &member, &FamilyRole::Member, &10_0000000);
+
+    // Enable rollover first
+    let enabled_limit = PrecisionSpendingLimit {
+        limit: 100_000000,
+        min_precision: 1_000000,
+        max_single_tx: 80_000000,
+        enable_rollover: true,
+    };
+    assert!(client.set_precision_spending_limit(&owner, &member, &enabled_limit));
+
+    // Make a transaction to create tracker
+    let tx1 = client.withdraw(&member, &token_contract.address(), &recipient, &30_000000);
+    assert_eq!(tx1, 0);
+
+    // Verify tracker exists
+    let tracker = client.get_spending_tracker(&member);
+    assert!(tracker.is_some());
+
+    // Disable rollover - this should remove the tracker
+    let disabled_limit = PrecisionSpendingLimit {
+        limit: 100_000000,
+        min_precision: 1_000000,
+        max_single_tx: 80_000000,
+        enable_rollover: false,
+    };
+    assert!(client.set_precision_spending_limit(&owner, &member, &disabled_limit));
+
+    // Verify tracker is removed
+    let tracker = client.get_spending_tracker(&member);
+    assert!(tracker.is_none());
+
+    // Should now be able to spend without cumulative limit
+    let tx2 = client.withdraw(&member, &token_contract.address(), &recipient, &80_000000);
+    assert_eq!(tx2, 0);
+
+    let tx3 = client.withdraw(&member, &token_contract.address(), &recipient, &80_000000);
+    assert_eq!(tx3, 0);
+}
