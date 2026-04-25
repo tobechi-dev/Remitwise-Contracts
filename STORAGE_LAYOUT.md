@@ -13,6 +13,21 @@ This document describes on-chain storage keys and value shapes for every workspa
 
 Scope: current implementation in this repository, focused on auditability and migration planning.
 
+## Storage Key Naming Conventions
+
+All storage keys follow strict naming conventions to ensure consistency and compatibility with Soroban's `symbol_short!` macro:
+
+- **Maximum length:** 9 characters (enforced by `symbol_short!`)
+- **Format:** UPPERCASE_WITH_UNDERSCORES
+- **Valid characters:** A-Z, 0-9, _ (underscore)
+
+These conventions are automatically validated in CI. See [Storage Key Naming Conventions](docs/storage-key-naming-conventions.md) for detailed guidelines and [testutils/tests/README.md](testutils/tests/README.md) for information about the automated validation tests.
+
+**Run validation tests:**
+```bash
+cargo test --package testutils storage_key_naming_test -- --nocapture
+```
+
 ## Common Patterns
 
 ### Storage scope
