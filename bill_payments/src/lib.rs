@@ -1771,6 +1771,9 @@ impl BillPayments {
 // Tests
 // -----------------------------------------------------------------------
 #[cfg(test)]
+mod events_schema_test;
+
+#[cfg(test)]
 mod test {
     use super::*;
     use proptest::prelude::*;

@@ -1870,4 +1870,6 @@ impl SavingsGoalContract {
 #[cfg(test)]
 mod event_test;
 #[cfg(test)]
+mod events_schema_test;
+#[cfg(test)]
 mod test;
