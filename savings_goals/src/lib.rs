@@ -2137,4 +2137,6 @@ env.storage().persistent().extend_ttl(&DataKey::Schedule(schedule_id), INSTANCE_
 #[cfg(test)]
 mod event_test;
 #[cfg(test)]
+mod events_schema_test;
+#[cfg(test)]
 mod test;

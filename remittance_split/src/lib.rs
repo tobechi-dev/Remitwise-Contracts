@@ -2,6 +2,8 @@
 #![allow(clippy::too_many_arguments)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 #[cfg(test)]
+mod events_schema_test;
+#[cfg(test)]
 mod test;
 
 use remitwise_common::{clamp_limit, EventCategory, EventPriority, RemitwiseEvents};
@@ -120,6 +122,37 @@ pub const MIN_SCHEDULE_INTERVAL: u64 = 3_600;
 /// Prevents unrealistic far-future scheduling that creates operational risk.
 pub const MAX_SCHEDULE_LEAD_TIME: u64 = 365 * 24 * 3_600;
 
+/// Insertion sort for a small `Vec<u32>` in ascending order.
+///
+/// Used by the per-owner schedule index (capped at MAX_SCHEDULES_PER_OWNER) to
+/// enforce deterministic ordering on storage. `soroban_sdk::Vec` does not
+/// expose a `sort_unstable`, and these lists are small enough that an
+/// in-place insertion sort is well within budget.
+fn sort_u32_vec_ascending(v: &mut Vec<u32>) {
+    let n = v.len();
+    let mut i: u32 = 1;
+    while i < n {
+        let key = match v.get(i) {
+            Some(k) => k,
+            None => return,
+        };
+        let mut j: u32 = i;
+        while j > 0 {
+            let prev = match v.get(j - 1) {
+                Some(p) => p,
+                None => break,
+            };
+            if prev <= key {
+                break;
+            }
+            v.set(j, prev);
+            j -= 1;
+        }
+        v.set(j, key);
+        i += 1;
+    }
+}
+
 /// Split configuration with owner tracking for access control
 #[derive(Clone)]
 #[contracttype]
@@ -224,6 +257,23 @@ pub struct AuditPage {
 pub struct SchedulePage {
     /// Schedule entries for this page, ordered by ID ascending.
     pub items: Vec<RemittanceSchedule>,
+    /// Index to pass as `from_index` for the next page. 0 means no more pages.
+    pub next_cursor: u32,
+    /// Number of items returned in this page.
+    pub count: u32,
+}
+
+/// Paginated result for `get_audit_log` queries.
+///
+/// Pagination contract is identical to `SchedulePage`: items are ordered
+/// oldest-to-newest, `next_cursor == 0` signals no more pages, and the
+/// result is deterministic for a given `(from_index, limit)` on identical
+/// state.
+#[contracttype]
+#[derive(Clone)]
+pub struct AuditPage {
+    /// Audit entries for this page, ordered oldest-to-newest.
+    pub items: Vec<AuditEntry>,
     /// Index to pass as `from_index` for the next page. 0 means no more pages.
     pub next_cursor: u32,
     /// Number of items returned in this page.
@@ -1860,12 +1910,10 @@ impl RemittanceSplit {
             INSTANCE_BUMP_AMOUNT,
         );
 
-        // 2. Update owner's schedule index
-        let mut owner_schedules: Vec<u32> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::OwnerSchedules(owner.clone()))
-            .unwrap_or_else(|| Vec::new(&env));
+        // 2. Update owner's schedule index.
+        // `next_schedule_id` is allocated as `current_max_id + 1`, so the
+        // per-owner index is naturally sorted ascending after `push_back`.
+        // Read paths rely on this invariant.
         owner_schedules.push_back(next_schedule_id);
         // Vec doesn't support sort; IDs are maintained in insertion order
         env.storage()

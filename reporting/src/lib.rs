@@ -1590,4 +1590,6 @@ impl ReportingContract {
 }
 
 #[cfg(test)]
+mod events_schema_test;
+#[cfg(test)]
 mod tests;
