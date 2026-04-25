@@ -133,11 +133,23 @@ pub struct ContractAddresses {
 /// Events emitted by the reporting contract
 #[contracttype]
 #[derive(Clone, Copy)]
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    Viewers(Address),
+}
+
+const MAX_VIEWERS_PER_USER: u32 = 5;
+
+/// Events emitted by the reporting contract
+#[contracttype]
+#[derive(Clone, Copy)]
 pub enum ReportingError {
     AlreadyInitialized = 1,
     NotInitialized = 2,
     Unauthorized = 3,
     AddressesNotConfigured = 4,
+    MaxViewersReached = 5,
 }
 
 impl From<ReportingError> for soroban_sdk::Error {
@@ -158,6 +170,10 @@ impl From<ReportingError> for soroban_sdk::Error {
             ReportingError::AddressesNotConfigured => soroban_sdk::Error::from((
                 soroban_sdk::xdr::ScErrorType::Contract,
                 soroban_sdk::xdr::ScErrorCode::MissingValue,
+            )),
+            ReportingError::MaxViewersReached => soroban_sdk::Error::from((
+                soroban_sdk::xdr::ScErrorType::Contract,
+                soroban_sdk::xdr::ScErrorCode::InvalidAction,
             )),
         }
     }
@@ -307,6 +323,58 @@ pub struct ReportingContract;
 
 #[contractimpl]
 impl ReportingContract {
+    fn verify_read_access(env: &Env, caller: &Address, user: &Address) {
+        caller.require_auth();
+        if caller != user {
+            let viewers: Vec<Address> = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Viewers(user.clone()))
+                .unwrap_or_else(|| Vec::new(env));
+            
+            if !viewers.contains(caller) {
+                panic!("unauthorized viewer");
+            }
+        }
+    }
+
+    pub fn grant_viewer(env: Env, user: Address, viewer: Address) -> Result<(), ReportingError> {
+        user.require_auth();
+        
+        let mut viewers: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Viewers(user.clone()))
+            .unwrap_or_else(|| Vec::new(&env));
+            
+        if !viewers.contains(&viewer) {
+            if viewers.len() >= MAX_VIEWERS_PER_USER {
+                return Err(ReportingError::MaxViewersReached);
+            }
+            viewers.push_back(viewer.clone());
+            env.storage().persistent().set(&DataKey::Viewers(user), &viewers);
+        }
+        
+        Ok(())
+    }
+
+    pub fn revoke_viewer(env: Env, user: Address, viewer: Address) -> Result<(), ReportingError> {
+        user.require_auth();
+        
+        let mut viewers: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Viewers(user.clone()))
+            .unwrap_or_else(|| Vec::new(&env));
+            
+        if let Some(pos) = viewers.first_index_of(&viewer) {
+            viewers.remove(pos);
+            env.storage().persistent().set(&DataKey::Viewers(user), &viewers);
+        }
+        
+        Ok(())
+    }
+
     /// Initialize the reporting contract with an admin address.
     ///
     /// # Arguments
@@ -401,11 +469,15 @@ impl ReportingContract {
     /// Generate remittance summary report
     pub fn get_remittance_summary(
         env: Env,
-        _user: Address,
+        caller: Address,
+        user: Address,
         total_amount: i128,
         period_start: u64,
         period_end: u64,
     ) -> Result<RemittanceSummary, ReportingError> {
+) -> Result<RemittanceSummary, ReportingError> {
+        Self::verify_read_access(&env, &caller, &user);
+
         let addresses: ContractAddresses = env
             .storage()
             .instance()
@@ -444,10 +516,14 @@ impl ReportingContract {
     /// Generate savings progress report
     pub fn get_savings_report(
         env: Env,
+        caller: Address,
         user: Address,
         period_start: u64,
         period_end: u64,
     ) -> Result<SavingsReport, ReportingError> {
+) -> Result<SavingsReport, ReportingError> {
+        Self::verify_read_access(&env, &caller, &user);
+
         let addresses: ContractAddresses = env
             .storage()
             .instance()
@@ -490,10 +566,14 @@ impl ReportingContract {
     /// Generate bill payment compliance report
     pub fn get_bill_compliance_report(
         env: Env,
+        caller: Address,
         user: Address,
         period_start: u64,
         period_end: u64,
     ) -> Result<BillComplianceReport, ReportingError> {
+) -> Result<BillComplianceReport, ReportingError> {
+        Self::verify_read_access(&env, &caller, &user);
+
         let addresses: ContractAddresses = env
             .storage()
             .instance()
@@ -558,10 +638,14 @@ impl ReportingContract {
     /// Generate insurance coverage report
     pub fn get_insurance_report(
         env: Env,
+        caller: Address,
         user: Address,
         period_start: u64,
         period_end: u64,
     ) -> Result<InsuranceReport, ReportingError> {
+) -> Result<InsuranceReport, ReportingError> {
+        Self::verify_read_access(&env, &caller, &user);
+
         let addresses: ContractAddresses = env
             .storage()
             .instance()
@@ -599,7 +683,11 @@ impl ReportingContract {
     }
 
     /// Calculate financial health score
-    pub fn calculate_health_score(env: Env, user: Address, _total_remittance: i128) -> Result<HealthScore, ReportingError> {
+    pub fn calculate_health_score(
+        env: Env, caller: Address, user: Address, _total_remittance: i128) -> Result<HealthScore, ReportingError> {
+) -> Result<HealthScore, ReportingError> {
+        Self::verify_read_access(&env, &caller, &user);
+
         let addresses: ContractAddresses = env
             .storage()
             .instance()
@@ -661,26 +749,31 @@ impl ReportingContract {
     /// Generate comprehensive financial health report
     pub fn get_financial_health_report(
         env: Env,
+        caller: Address,
         user: Address,
         total_remittance: i128,
         period_start: u64,
         period_end: u64,
     ) -> Result<FinancialHealthReport, ReportingError> {
+) -> Result<FinancialHealthReport, ReportingError> {
+        Self::verify_read_access(&env, &caller, &user);
+
         let health_score =
-            Self::calculate_health_score(env.clone(), user.clone(), total_remittance)?;
+            Self::calculate_health_score(env.clone(), caller.clone(), user.clone(), total_remittance)?;
         let remittance_summary = Self::get_remittance_summary(
             env.clone(),
+            caller.clone(),
             user.clone(),
             total_remittance,
             period_start,
             period_end,
         )?;
         let savings_report =
-            Self::get_savings_report(env.clone(), user.clone(), period_start, period_end)?;
+            Self::get_savings_report(env.clone(), caller.clone(), user.clone(), period_start, period_end)?;
         let bill_compliance =
-            Self::get_bill_compliance_report(env.clone(), user.clone(), period_start, period_end)?;
+            Self::get_bill_compliance_report(env.clone(), caller.clone(), user.clone(), period_start, period_end)?;
         let insurance_report =
-            Self::get_insurance_report(env.clone(), user, period_start, period_end)?;
+            Self::get_insurance_report(env.clone(), caller, user, period_start, period_end)?;
 
         let generated_at = env.ledger().timestamp();
 
@@ -702,10 +795,14 @@ impl ReportingContract {
     /// Generate trend analysis comparing two periods
     pub fn get_trend_analysis(
         _env: Env,
-        _user: Address,
+        caller: Address,
+        user: Address,
         current_amount: i128,
         previous_amount: i128,
     ) -> TrendData {
+) -> TrendData {
+        Self::verify_read_access(&_env, &caller, &user);
+
         let change_amount = current_amount - previous_amount;
         let change_percentage = if previous_amount > 0 {
             ((change_amount * 100) / previous_amount) as i32
@@ -756,9 +853,13 @@ impl ReportingContract {
     /// Retrieve a stored report
     pub fn get_stored_report(
         env: Env,
+        caller: Address,
         user: Address,
         period_key: u64,
     ) -> Option<FinancialHealthReport> {
+) -> Option<FinancialHealthReport> {
+        Self::verify_read_access(&env, &caller, &user);
+
         let reports: Map<(Address, u64), FinancialHealthReport> = env
             .storage()
             .instance()
@@ -863,7 +964,11 @@ impl ReportingContract {
     ///
     /// # Returns
     /// Vec of ArchivedReport structs
-    pub fn get_archived_reports(env: Env, user: Address) -> Vec<ArchivedReport> {
+    pub fn get_archived_reports(
+        env: Env, caller: Address, user: Address) -> Vec<ArchivedReport> {
+) -> Vec<ArchivedReport> {
+        Self::verify_read_access(&env, &caller, &user);
+
         let archived: Map<(Address, u64), ArchivedReport> = env
             .storage()
             .instance()

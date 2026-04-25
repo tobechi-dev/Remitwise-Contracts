@@ -307,7 +307,7 @@ fn test_get_remittance_summary_addresses_not_configured() {
     let period_start = 1704067200u64;
     let period_end = 1706745600u64;
 
-    let result = client.try_get_remittance_summary(&user, &total_amount, &period_start, &period_end);
+    let result = client.try_get_remittance_summary(&user, &user, &total_amount, &period_start, &period_end);
     assert!(result.is_err(), "Should fail when addresses not configured");
 }
 
@@ -326,7 +326,7 @@ fn test_get_savings_report_addresses_not_configured() {
     let period_start = 1704067200u64;
     let period_end = 1706745600u64;
 
-    let result = client.try_get_savings_report(&user, &period_start, &period_end);
+    let result = client.try_get_savings_report(&user, &user, &period_start, &period_end);
     assert!(result.is_err(), "Should fail when addresses not configured");
 }
 
@@ -345,7 +345,7 @@ fn test_get_bill_compliance_report_addresses_not_configured() {
     let period_start = 1704067200u64;
     let period_end = 1706745600u64;
 
-    let result = client.try_get_bill_compliance_report(&user, &period_start, &period_end);
+    let result = client.try_get_bill_compliance_report(&user, &user, &period_start, &period_end);
     assert!(result.is_err(), "Should fail when addresses not configured");
 }
 
@@ -364,7 +364,7 @@ fn test_get_insurance_report_addresses_not_configured() {
     let period_start = 1704067200u64;
     let period_end = 1706745600u64;
 
-    let result = client.try_get_insurance_report(&user, &period_start, &period_end);
+    let result = client.try_get_insurance_report(&user, &user, &period_start, &period_end);
     assert!(result.is_err(), "Should fail when addresses not configured");
 }
 
@@ -380,7 +380,7 @@ fn test_calculate_health_score_addresses_not_configured() {
 
     client.init(&admin);
 
-    let result = client.try_calculate_health_score(&user, &10000);
+    let result = client.try_calculate_health_score(&user, &user, &10000);
     assert!(result.is_err(), "Should fail when addresses not configured");
 }
 
@@ -400,7 +400,7 @@ fn test_get_financial_health_report_addresses_not_configured() {
     let period_start = 1704067200u64;
     let period_end = 1706745600u64;
 
-    let result = client.try_get_financial_health_report(&user, &total_remittance, &period_start, &period_end);
+    let result = client.try_get_financial_health_report(&user, &user, &total_remittance, &period_start, &period_end);
     assert!(result.is_err(), "Should fail when addresses not configured");
 }
 
@@ -439,7 +439,7 @@ fn test_get_remittance_summary() {
     let period_start = 1704067200u64;
     let period_end = 1706745600u64;
 
-    let result = client.try_get_remittance_summary(&user, &total_amount, &period_start, &period_end);
+    let result = client.try_get_remittance_summary(&user, &user, &total_amount, &period_start, &period_end);
     assert!(result.is_ok());
     let summary = result.unwrap();
 
@@ -478,7 +478,7 @@ fn test_get_savings_report() {
     let period_start = 1704067200u64;
     let period_end = 1706745600u64;
 
-    let result = client.try_get_savings_report(&user, &period_start, &period_end);
+    let result = client.try_get_savings_report(&user, &user, &period_start, &period_end);
     assert!(result.is_ok());
     let report = result.unwrap();
 
@@ -516,7 +516,7 @@ fn test_get_bill_compliance_report() {
     let period_start = 1704067200u64;
     let period_end = 1706745600u64;
 
-    let result = client.try_get_bill_compliance_report(&user, &period_start, &period_end);
+    let result = client.try_get_bill_compliance_report(&user, &user, &period_start, &period_end);
     assert!(result.is_ok());
 }
 
@@ -550,7 +550,7 @@ fn test_get_insurance_report() {
     let period_start = 1704067200u64;
     let period_end = 1706745600u64;
 
-    let result = client.try_get_insurance_report(&user, &period_start, &period_end);
+    let result = client.try_get_insurance_report(&user, &user, &period_start, &period_end);
     assert!(result.is_ok());
 }
 
@@ -581,7 +581,7 @@ fn test_calculate_health_score() {
         &family_wallet,
     );
 
-    let result = client.try_calculate_health_score(&user, &10000);
+    let result = client.try_calculate_health_score(&user, &user, &10000);
     assert!(result.is_ok());
     let health_score = result.unwrap();
 
@@ -619,7 +619,7 @@ fn test_get_financial_health_report() {
     let period_start = 1704067200u64;
     let period_end = 1706745600u64;
 
-    let result = client.try_get_financial_health_report(&user, &total_remittance, &period_start, &period_end);
+    let result = client.try_get_financial_health_report(&user, &user, &total_remittance, &period_start, &period_end);
     assert!(result.is_ok());
     let report = result.unwrap();
 
@@ -638,7 +638,7 @@ fn test_get_trend_analysis() {
     let current_amount = 15000i128;
     let previous_amount = 10000i128;
 
-    let trend = client.get_trend_analysis(&user, &current_amount, &previous_amount);
+    let trend = client.get_trend_analysis(&user, &user, &current_amount, &previous_amount);
 
     assert_eq!(trend.current_amount, 15000);
     assert_eq!(trend.change_percentage, 50);
@@ -675,7 +675,7 @@ fn test_store_and_retrieve_report() {
     let period_start = 1704067200u64;
     let period_end = 1706745600u64;
 
-    let result = client.try_get_financial_health_report(&user, &total_remittance, &period_start, &period_end);
+    let result = client.try_get_financial_health_report(&user, &user, &total_remittance, &period_start, &period_end);
     assert!(result.is_ok());
     let report = result.unwrap();
 
@@ -683,7 +683,7 @@ fn test_store_and_retrieve_report() {
     let stored = client.store_report(&user, &report, &period_key);
     assert!(stored);
 
-    let retrieved = client.get_stored_report(&user, &period_key);
+    let retrieved = client.get_stored_report(&user, &user, &period_key);
     assert!(retrieved.is_some());
 }
 
@@ -718,7 +718,7 @@ fn test_archive_old_reports() {
         &family_wallet,
     );
 
-    let result = client.try_get_financial_health_report(&user, &10000i128, &1704067200u64, &1706745600u64);
+    let result = client.try_get_financial_health_report(&user, &user, &10000i128, &1704067200u64, &1706745600u64);
     assert!(result.is_ok());
     let report = result.unwrap();
 
@@ -729,7 +729,7 @@ fn test_archive_old_reports() {
     assert!(archive_result.is_ok());
     assert_eq!(archive_result.unwrap(), 1);
 
-    assert!(client.get_stored_report(&user, &period_key).is_none());
+    assert!(client.get_stored_report(&user, &user, &period_key).is_none());
 }
 
 #[test]
@@ -759,7 +759,7 @@ fn test_cleanup_old_reports() {
         &family_wallet,
     );
 
-    let result = client.try_get_financial_health_report(&user, &10000i128, &1704067200u64, &1706745600u64);
+    let result = client.try_get_financial_health_report(&user, &user, &10000i128, &1704067200u64, &1706745600u64);
     assert!(result.is_ok());
     let report = result.unwrap();
     client.store_report(&user, &report, &202401);
@@ -832,4 +832,51 @@ fn test_instance_ttl_extended_on_init() {
 
     let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(ttl >= 518_400);
+}
+
+#[test]
+fn test_acl_delegation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    set_ledger_time(&env, 1, 1704067200);
+    let contract_id = env.register_contract(None, ReportingContract);
+    let client = ReportingContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let viewer = Address::generate(&env);
+
+    client.init(&admin);
+
+    let remittance_split_id = env.register_contract(None, remittance_split::RemittanceSplit);
+    let savings_goals_id = env.register_contract(None, savings_goals::SavingsGoalsContract);
+    let bill_payments_id = env.register_contract(None, bill_payments::BillPayments);
+    let insurance_id = env.register_contract(None, insurance::Insurance);
+    let family_wallet = Address::generate(&env);
+
+    client.configure_addresses(
+        &admin,
+        &remittance_split_id,
+        &savings_goals_id,
+        &bill_payments_id,
+        &insurance_id,
+        &family_wallet,
+    );
+
+    // Default: viewer cannot read
+    let res = client.try_get_savings_report(&viewer, &user, &1704067200u64, &1706745600u64);
+    assert!(res.is_err(), "Viewer without ACL should fail");
+
+    // Grant viewer
+    client.grant_viewer(&user, &viewer);
+
+    // Viewer can read
+    let res = client.try_get_savings_report(&viewer, &user, &1704067200u64, &1706745600u64);
+    assert!(res.is_ok(), "Viewer with ACL should succeed");
+
+    // Revoke viewer
+    client.revoke_viewer(&user, &viewer);
+
+    // Viewer cannot read
+    let res = client.try_get_savings_report(&viewer, &user, &1704067200u64, &1706745600u64);
+    assert!(res.is_err(), "Viewer after revoke should fail");
 }
