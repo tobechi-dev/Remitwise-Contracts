@@ -1718,6 +1718,23 @@ impl RemittanceSplit {
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
+    fn sort_u32_vec(v: &mut Vec<u32>) {
+        let len = v.len();
+        for i in 1..len {
+            let key = v.get(i).unwrap_or(0);
+            let mut j = i;
+            while j > 0 {
+                let prev = v.get(j - 1).unwrap_or(0);
+                if prev <= key {
+                    break;
+                }
+                v.set(j, prev);
+                j -= 1;
+            }
+            v.set(j, key);
+        }
+    }
+
     /// Create a new automatic remittance schedule for the split owner.
     ///
     /// # Arguments
